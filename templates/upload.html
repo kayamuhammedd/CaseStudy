@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Photo and Text</title>
+</head>
+<body>
+    <h1>Upload Photo and Text</h1>
+    <form method="POST" action="/upload" enctype="multipart/form-data">
+        <label for="photo">Select a photo:</label>
+        <input type="file" id="photo" name="photo" accept="image/png" required>
+        <br>
+        <label for="text">Prompt:</label>
+        <input type="text" id="text" name="text" required>
+        <br>
+        <input type="submit" value="Upload">
+    </form>
+
+    <form method="POST" action="/RemoveBackground" enctype="multipart/form-data">
+        <label for="photo">Select a photo for remove background and inpaint:</label>
+        <input type="file" id="photo1" name="photo" accept="image/png" required>
+        <br>
+        <label for="text">Prompt:</label>
+        <input type="text" id="text1" name="text" required>
+        <br>
+        <input type="submit" value="Remove Background">
+    </form>
+</body>
+</html>
