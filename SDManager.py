@@ -140,6 +140,7 @@ class StableDiffusionManager():
                 pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
                 pipe.enable_attention_slicing()
                 pipe = pipe.to("cuda")
+                max_length_pipe = pipe.tokenizer.model_max_length
 
                 def dummy(images, **kwargs):
                     return images, False
@@ -150,7 +151,7 @@ class StableDiffusionManager():
                 uppipe.set_use_memory_efficient_attention_xformers(True)
                 uppipe = uppipe.to("cuda")
                 uppipe.enable_attention_slicing()
-
+                max_length_uppipe = uppipe.tokenizer.model_max_length
                 print("Prompt = ", prompt)
                 orig_prompt = prompt
                 orig_negative_prompt = "text, bright, oversaturated, ugly, 3d, render, cartoon, grain, low-res, kitsch, blender, cropped, lowres, poorly drawn face, out of frame, poorly drawn hands, blurry, bad art, blurred, text, watermark, disfigured, deformed, mangled"
@@ -159,19 +160,39 @@ class StableDiffusionManager():
                 prompt = [orig_prompt] * num_images
                 negative_prompt = [orig_negative_prompt] * num_images
 
-                images = pipe(prompt=prompt, negative_prompt=negative_prompt, image=init_image,
-                              mask_image=mask_image if isRemoveBackground else image1,
-                              num_inference_steps=75)[0]
+                input_ids = pipe.tokenizer(prompt, padding="max_length", truncation=True, max_length=max_length_pipe,
+                                           return_tensors="pt").input_ids
+                input_ids = input_ids.to("cuda")
+
+                negative_ids = pipe.tokenizer(negative_prompt, truncation=False, padding="max_length",
+                                              max_length=input_ids.shape[-1],
+                                              return_tensors="pt").input_ids
+                negative_ids = negative_ids.to("cuda")
+
+                concat_embeds = []
+                neg_embeds = []
+                for i in range(0, input_ids.shape[-1], max_length_pipe):
+                    concat_embeds.append(pipe.text_encoder(input_ids[:, i: i + max_length_pipe])[0])
+                    neg_embeds.append(pipe.text_encoder(negative_ids[:, i: i + max_length_pipe])[0])
+
+                prompt_embeds = torch.cat(concat_embeds, dim=1)
+                negative_prompt_embeds = torch.cat(neg_embeds, dim=1)
+
+                images = \
+                pipe(prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_prompt_embeds, image=init_image,
+                     mask_image=mask_image if isRemoveBackground else image1,
+                     num_inference_steps=100)[0]
 
                 print(images[0].size)
                 images[0].save("MyFrst.png")
+                # images[1].save("MySecond.png")
                 hi_res_images = []
                 for i in range(num_images):
                     low_res_image = images[i]
                     prompt = [orig_prompt] * 1
                     negative_prompt = [orig_negative_prompt] * 1
                     hi_res_image = \
-                        uppipe(prompt=prompt, negative_prompt=negative_prompt,
+                        uppipe(prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_prompt_embeds,
                                image=low_res_image.resize((256, 256))).images[0]
                     hi_res_image = hi_res_image.convert("RGB")
                     hi_res_images.append(hi_res_image)
@@ -276,7 +297,7 @@ class StableDiffusionManager():
             pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
             pipe.enable_attention_slicing()
             pipe = pipe.to("cuda")
-
+            max_length_pipe = pipe.tokenizer.model_max_length
             def dummy(images, **kwargs):
                 return images, False
 
@@ -286,7 +307,7 @@ class StableDiffusionManager():
             uppipe.set_use_memory_efficient_attention_xformers(True)
             uppipe = uppipe.to("cuda")
             uppipe.enable_attention_slicing()
-
+            max_length_uppipe = uppipe.tokenizer.model_max_length
             print("Prompt = ", prompt)
             orig_prompt = prompt
             orig_negative_prompt = "text, bright, oversaturated, ugly, 3d, render, cartoon, grain, low-res, kitsch, blender, cropped, lowres, poorly drawn face, out of frame, poorly drawn hands, blurry, bad art, blurred, text, watermark, disfigured, deformed, mangled"
@@ -295,8 +316,26 @@ class StableDiffusionManager():
             prompt = [orig_prompt] * num_images
             negative_prompt = [orig_negative_prompt] * num_images
 
-            images = pipe(prompt=prompt, negative_prompt=negative_prompt, image=init_image, mask_image=mask_image if isRemoveBackground else image1,
-                          num_inference_steps=75)[0]
+            input_ids = pipe.tokenizer(prompt, padding="max_length", truncation=True, max_length=max_length_pipe,return_tensors="pt").input_ids
+            input_ids = input_ids.to("cuda")
+
+            negative_ids = pipe.tokenizer(negative_prompt, truncation=False, padding="max_length", max_length=input_ids.shape[-1],
+                                          return_tensors="pt").input_ids
+            negative_ids = negative_ids.to("cuda")
+
+            concat_embeds = []
+            neg_embeds = []
+            for i in range(0, input_ids.shape[-1], max_length_pipe):
+                concat_embeds.append(pipe.text_encoder(input_ids[:, i: i + max_length_pipe])[0])
+                neg_embeds.append(pipe.text_encoder(negative_ids[:, i: i + max_length_pipe])[0])
+
+            prompt_embeds = torch.cat(concat_embeds, dim=1)
+            negative_prompt_embeds = torch.cat(neg_embeds, dim=1)
+
+
+
+            images = pipe(prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_prompt_embeds, image=init_image, mask_image=mask_image if isRemoveBackground else image1,
+                          num_inference_steps=100)[0]
 
             print(images[0].size)
             images[0].save("MyFrst.png")
@@ -307,7 +346,7 @@ class StableDiffusionManager():
                 prompt = [orig_prompt] * 1
                 negative_prompt = [orig_negative_prompt] * 1
                 hi_res_image = \
-                uppipe(prompt=prompt, negative_prompt=negative_prompt, image=low_res_image.resize((256, 256))).images[0]
+                uppipe(prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_prompt_embeds, image=low_res_image.resize((256, 256))).images[0]
                 hi_res_image = hi_res_image.convert("RGB")
                 hi_res_images.append(hi_res_image)
 
