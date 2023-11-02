@@ -7,7 +7,8 @@ import u2net
 import io
 import torch
 from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionUpscalePipeline, ControlNetModel, \
-    StableDiffusionControlNetPipeline, PNDMScheduler, DDIMScheduler
+    StableDiffusionControlNetPipeline, PNDMScheduler, DDIMScheduler, StableDiffusionPipeline, \
+    StableDiffusionInpaintPipeline
 from transformers import CLIPTextModel, CLIPTokenizer
 
 class StableDiffusionManager():
@@ -284,7 +285,7 @@ class StableDiffusionManager():
 
                 print("Prompt = ", prompt)
                 orig_prompt = prompt
-                orig_negative_prompt = "text, widen, extend, bright, oversaturated, ugly, 3d, render, cartoon, grain, low-res, kitsch, blender, cropped, lowres, poorly drawn face, out of frame, poorly drawn hands, blurry, bad art, blurred, text, watermark, disfigured, deformed, mangled"
+                orig_negative_prompt = "human, text, widen, extend, bright, oversaturated, ugly, 3d, render, cartoon, grain, low-res, kitsch, blender, cropped, lowres, poorly drawn face, out of frame, poorly drawn hands, blurry, bad art, blurred, text, watermark, disfigured, deformed, mangled"
 
                 num_images = 1
                 prompt = [orig_prompt] * num_images
@@ -338,10 +339,10 @@ class StableDiffusionManager():
                 upscaler_repo_id = "stabilityai/stable-diffusion-x4-upscaler"
 
                 #init_image_full_size = Image.open(image)  # .convert("RGB")
-                init_image = image.resize((512, 512))
+                init_image = image
                 mask_image = np.array(init_image)[:, :, 3]  # assume image has alpha mask (use .mode to check for "RGBA")
-                mask_image = np.array(Image.fromarray(mask_image.astype(np.uint8)).resize((512, 512))).astype('float32')
-                init_image = np.array(image.resize((512, 512))).astype(np.uint8)
+                mask_image = np.array(Image.fromarray(mask_image.astype(np.uint8)).resize((1425, 2000))).astype('float32')
+                init_image = np.array(image.resize((1425, 2000))).astype(np.uint8)
 
                 y, x = image.size
                 # Insert image2 into image1
@@ -354,7 +355,7 @@ class StableDiffusionManager():
                 init_image = init_image.convert("RGB")"""
 
                 # Create a new 512x512 array filled with 255 values
-                expanded_array = np.ones((x, y,3 ), dtype=np.uint8) * 255
+                expanded_array = np.ones((2850, 4000,3 ), dtype=np.uint8) * 255
 
 
                 # Copy the original array into the larger array
@@ -370,14 +371,25 @@ class StableDiffusionManager():
                 image1 =(Image.fromarray(expanded_array.astype(np.uint8)).resize((512, 512)))
 
 
+                expanded_array_init_image = np.ones((2850, 4000, 3), dtype=np.uint8) *255
 
-                expanded_array_init_image = np.zeros((x, y, 3), dtype=np.uint8)
+                # Create a mask of the elements with value 255
+                mask = (expanded_array_init_image == 255)
+
+                # Update the corresponding elements with 0
+                expanded_array_init_image[mask] = 0
+
+                mask = (init_image == 255)
+
+                # Update the corresponding elements with 0
+                init_image[mask] = 0
+
                 # Copy the original array into the larger array
                 # Calculate the coordinates to place the original image in the middle
-                start_row = (expanded_array_init_image.shape[0] -  init_image.shape[1]) // 2
-                end_row = start_row +   init_image.shape[1]
-                start_col = (expanded_array_init_image.shape[1] -  init_image.shape[0]) // 2
-                end_col = start_col +   init_image.shape[0]
+                start_row = (expanded_array_init_image.shape[0] -  init_image.shape[0]) // 2
+                end_row = start_row +   init_image.shape[0]
+                start_col = (expanded_array_init_image.shape[1] -  init_image.shape[1]) // 2
+                end_col = start_col +   init_image.shape[1]
 
                 init_image =Image.fromarray(init_image).convert("RGB")
                 print("muh = ", image.size)
@@ -389,7 +401,7 @@ class StableDiffusionManager():
                 init_image.save("init_image.png")
                 image1.save("mask.png")
 
-                pipe = DiffusionPipeline.from_pretrained(inpainting_repo_id, torch_dtype=torch.float16, revision="fp16")
+                pipe = StableDiffusionInpaintPipeline.from_pretrained(inpainting_repo_id, torch_dtype=torch.float16, revision="fp16")
                 pipe.set_use_memory_efficient_attention_xformers(True)
                 pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
                 pipe.enable_attention_slicing()
@@ -409,7 +421,7 @@ class StableDiffusionManager():
                 orig_prompt = prompt
                 orig_negative_prompt = "text, widen, extend, bright, oversaturated, ugly, 3d, render, cartoon, grain, low-res, kitsch, blender, cropped, lowres, poorly drawn face, out of frame, poorly drawn hands, blurry, bad art, blurred, text, watermark, disfigured, deformed, mangled"
 
-                num_images =1
+                num_images = 1
                 prompt = [orig_prompt] * num_images
                 negative_prompt = [orig_negative_prompt] * num_images
 
@@ -428,10 +440,13 @@ class StableDiffusionManager():
 
                 prompt_embeds = torch.cat(concat_embeds, dim=1)
                 negative_prompt_embeds = torch.cat(neg_embeds, dim=1)
-
-                images = pipe(prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_prompt_embeds, image=init_image, mask_image=mask_image if isRemoveBackground else image1,
-                              num_inference_steps=100)[0]
-
+                try:
+                    images = pipe(prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_prompt_embeds,
+                                  image=init_image, mask_image=image1,
+                                  num_inference_steps=100)[0]
+                except Exception as e:
+                    print("Hata = ", e)
+                print("pipe geçti")
                 print(images[0].size)
                 images[0].save("MyFrst.png")
                 #images[1].save("MySecond.png")
@@ -451,9 +466,10 @@ class StableDiffusionManager():
                 else:
                     final_image = hi_res_images[0].resize((x, y))
                     #final_image2 = hi_res_images[1].resize((x, y))
-                    final_image.paste(image.convert("RGBA"), mask=image.convert("RGBA"))
-                    final_image.save(f"static//Inpainted_OutPaintedMY.png")
+                    #final_image.paste(image.convert("RGBA"), mask=image.convert("RGBA"))
+                    final_image.save(f"static//Inpainted_OutPaintedMY1.png")
                     #final_image2.save(f"static//Inpainted_OutPainted2MY.png")
+
 
 
         def RemoveBackgroundMy(self, prompt, image):
